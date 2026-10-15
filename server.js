@@ -613,40 +613,42 @@ app.delete('/movimentacoes/:id', async (req, res) => {
     }
 });
 
-// =====================================
-// TRATAMENTO DE ERROS
-// =====================================
 
-// JSON malformado
-app.use((error, req, res, next) => {
-    if (error instanceof SyntaxError && error.status === 400) {
-        return res.status(400).json({
-            erro: 'JSON inválido'
-        });
-    }
+ // =====================================
+ // TRATAMENTO DE ERROS
+ // =====================================
 
-    next(error);
-});
+ // JSON malformado
+ app.use((error, req, res, next) => {
+     if (error instanceof SyntaxError && error.status === 400) {
+         return res.status(400).json({
+             erro: 'JSON inválido'
+         });
+     }
 
-if (require.main === module) {
-    const PORT = process.env.PORT || 3000;
+     next(error);
+ });
 
-    app.listen(PORT, () => {
-        console.log(`API rodando na porta ${PORT}`);
-    });
-}
+ // Rota não encontrada
+ app.use((req, res) => {
+     res.status(404).json({
+         erro: 'Rota não encontrada'
+     });
+ });
 
+ // Erros inesperados
+ app.use((error, req, res, next) => {
+     tratarErro(res, error);
+ });
 
-// Rota não encontrada
-app.use((req, res) => {
-    res.status(404).json({
-        erro: 'Rota não encontrada'
-    });
-});
+ // =====================================
+ // INICIALIZAÇÃO
+ // =====================================
 
-// Erros inesperados
-app.use((error, req, res, next) => {
-    tratarErro(res, error);
-});
+ if (require.main === module) {
+     app.listen(PORT, () => {
+         console.log(`Hertz API rodando na porta ${PORT}`);
+     });
+ }
 
-module.exports = app;
+ module.exports = app;
