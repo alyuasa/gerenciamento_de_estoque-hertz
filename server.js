@@ -644,11 +644,11 @@ app.use((error, req, res, next) => {
 // INICIALIZAÇÃO
 // =====================================
 
-// Inicia localmente, mas permite que a Vercel
-// importe a aplicação sem iniciar outra porta.
 if (require.main === module) {
+    const PORT = process.env.PORT || 3000;
+
     app.listen(PORT, () => {
-        console.log(`Hertz API rodando na porta ${PORT}`);
+        console.log(`API rodando na porta ${PORT}`);
     });
 }
 
