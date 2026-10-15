@@ -1,0 +1,127 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Hertz | Produtos</title>
+
+    <link rel="stylesheet" href="./style.css">
+
+    <script src="./tema.js" defer></script>
+    <script src="./layout.js" defer></script>
+    <script src="./api.js" defer></script>
+    <script src="./produtos.js" defer></script>
+</head>
+
+<body>
+    <div id="shell"></div>
+
+    <main class="content">
+        <header class="page-heading">
+            <div>
+                <p class="eyebrow">HERTZ / ESTOQUE</p>
+                <h1>Produtos</h1>
+                <p class="muted">
+                    Gerencie seus produtos organizados por categoria.
+                </p>
+            </div>
+
+            <button class="btn primary" id="novo-produto" type="button">
+                + Novo produto
+            </button>
+        </header>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>Catálogo de produtos</h2>
+
+                <input
+                    type="search"
+                    id="buscar-produto"
+                    placeholder="Buscar produto ou categoria..."
+                    aria-label="Buscar produtos"
+                >
+            </div>
+
+            <div id="categorias-produtos" class="categorias-container">
+                <p class="muted">Carregando produtos...</p>
+            </div>
+        </section>
+
+        <!-- MODAL DE CADASTRO E EDIÇÃO -->
+        <dialog id="modal-produto">
+            <form id="form-produto">
+                <div class="modal-head">
+                    <h2 id="titulo-produto">Novo produto</h2>
+
+                    <button type="button" class="icon-btn" data-fechar>
+                        ✕
+                    </button>
+                </div>
+
+                <label>
+                    Nome do produto
+                    <input
+                        type="text"
+                        name="nome"
+                        maxlength="255"
+                        required
+                    >
+                </label>
+
+                <label>
+                    Categoria
+                    <input
+                        type="text"
+                        name="categoria"
+                        maxlength="255"
+                        placeholder="Ex: Fones de ouvido"
+                        required
+                    >
+                </label>
+
+                <label>
+                    Valor (R$)
+                    <input
+                        type="number"
+                        name="valor"
+                        min="0"
+                        step="0.01"
+                        required
+                    >
+                </label>
+
+                <label id="campo-quantidade">
+                    Quantidade inicial
+                    <input
+                        type="number"
+                        name="quantidade"
+                        min="0"
+                        step="1"
+                        required
+                    >
+                </label>
+
+                <p id="aviso-quantidade" class="hint" hidden>
+                    Para alterar a quantidade disponível,
+                    registre uma movimentação.
+                </p>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn secondary" data-fechar>
+                        Cancelar
+                    </button>
+
+                    <button type="submit" class="btn primary">
+                        Salvar produto
+                    </button>
+                </div>
+            </form>
+        </dialog>
+    </main>
+
+    <div id="toast" role="status"></div>
+</body>
+</html>

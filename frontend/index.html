@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hertz | Music & Audio Store</title>
+<link rel="stylesheet" href="./style.css">
+<script src="./tema.js" defer></script>
+<script src="./layout.js" defer></script>
+<script src="./api.js" defer></script>
+<script src="./dashboard.js" defer></script>
+    
+</head>
+<body>
+    <div id="shell"></div>
+
+    <main class="content">
+        <header class="page-heading">
+            <div>
+                <p class="eyebrow">HERTZ / ESTOQUE</p>
+                <h1>Dashboard</h1>
+                <p class="muted">Acompanhe seu estoque em tempo real.</p>
+            </div>
+        </header>
+
+        <section class="stat-grid" id="stats">
+            <p class="muted">Carregando indicadores...</p>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>Últimas movimentações</h2>
+                <a href="movimentacoes.html">Ver todas →</a>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Produto</th>
+                            <th>Tipo</th>
+                            <th>Quantidade</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recentes"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <div id="toast" role="status"></div>
+</body>
+</html>

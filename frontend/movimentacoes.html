@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hertz | Movimentações</title>
+<link rel="stylesheet" href="./style.css">
+<script src="./tema.js" defer></script>
+<script src="./layout.js" defer></script>
+<script src="./api.js" defer></script>
+<script src="./movimentacoes.js" defer></script>
+</head>
+<body>
+    <div id="shell"></div>
+
+    <main class="content">
+        <header class="page-heading">
+            <div>
+                <p class="eyebrow">HERTZ / ESTOQUE</p>
+                <h1>Movimentações</h1>
+                <p class="muted">Registre entradas e saídas de produtos.</p>
+            </div>
+            <button class="btn primary" id="nova-movimentacao">
+                + Nova movimentação
+            </button>
+        </header>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>Histórico de movimentações</h2>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Data</th>
+                            <th>Produto</th>
+                            <th>Tipo</th>
+                            <th>Quantidade</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lista-movimentacoes"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <dialog id="modal-movimentacao">
+            <form id="form-movimentacao">
+                <div class="modal-head">
+                    <h2 id="titulo-movimentacao">Nova movimentação</h2>
+                    <button type="button" class="icon-btn" data-fechar>
+                        ✕
+                    </button>
+                </div>
+
+                <label>Produto
+                    <select name="produtos_id_produto" required></select>
+                </label>
+
+                <label>Tipo
+                    <select name="tipo" required>
+                        <option value="entrada">Entrada</option>
+                        <option value="saida">Saída</option>
+                    </select>
+                </label>
+
+                <label>Quantidade
+                    <input name="qtd_movimentada" type="number"
+                        min="1" step="1" required>
+                </label>
+
+                <p class="hint" id="aviso-vinculo" hidden>
+                    O produto de uma movimentação não pode ser alterado.
+                </p>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn secondary" data-fechar>
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn primary">
+                        Salvar
+                    </button>
+                </div>
+            </form>
+        </dialog>
+    </main>
+
+    <div id="toast" role="status"></div>
+</body>
+</html>
