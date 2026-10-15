@@ -628,6 +628,15 @@ app.use((error, req, res, next) => {
     next(error);
 });
 
+if (require.main === module) {
+    const PORT = process.env.PORT || 3000;
+
+    app.listen(PORT, () => {
+        console.log(`API rodando na porta ${PORT}`);
+    });
+}
+
+
 // Rota não encontrada
 app.use((req, res) => {
     res.status(404).json({
@@ -639,17 +648,5 @@ app.use((req, res) => {
 app.use((error, req, res, next) => {
     tratarErro(res, error);
 });
-
-// =====================================
-// INICIALIZAÇÃO
-// =====================================
-
-if (require.main === module) {
-    const PORT = process.env.PORT || 3000;
-
-    app.listen(PORT, () => {
-        console.log(`API rodando na porta ${PORT}`);
-    });
-}
 
 module.exports = app;
