@@ -1,15 +1,21 @@
 # Hertz — Gerenciamento de Estoque
 
-Sistema para gerenciamento de produtos e movimentações da loja de música fictícia Hertz - Music & Audio Store
-
-## Tecnologias
-- HTML, CSS e JavaScript
-- Node.js e Express
-- MySQL
+Sistema de gerenciamento de estoque desenvolvido com HTML,
+CSS, JavaScript, Node.js, Express e MySQL.
 
 ## Funcionalidades
+
+- Dashboard de estoque
 - CRUD de produtos
 - CRUD de movimentações
-- Dashboard de estoque
-- Organização por categorias
+- Produtos organizados por categoria
 - Modo claro e escuro
+
+## Tecnologias
+
+- HTML5
+- CSS3
+- JavaScript
+- Node.js
+- Express
+- MySQL
