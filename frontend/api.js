@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000';
+const API_URL = 'https://hertz-api.vercel.app';
 
 async function requisitar(caminho, opcoes = {}) {
     let resposta;
