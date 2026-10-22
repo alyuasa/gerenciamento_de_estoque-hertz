@@ -14,15 +14,21 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+
 const origensPermitidas = [
     'http://localhost:5500',
     'http://127.0.0.1:5500',
+    'https://estoque-hertz.vercel.app',
     process.env.FRONTEND_URL
+        ?.replace(/\/+$/, '')
 ].filter(Boolean);
 
 app.use(cors({
-    origin: origensPermitidas
+    origin: origensPermitidas,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 
 // ==========================================
 // FUNÇÕES AUXILIARES
