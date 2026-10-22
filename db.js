@@ -1,22 +1,14 @@
+const { Pool } = require('pg');
 
-const mysql = require('mysql2/promise');
+const db = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 5,
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000
+});
 
-const db = mysql.createPool({
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-
-    waitForConnections: true,
-    connectionLimit: 5,
-    queueLimit: 0,
-
-    connectTimeout: 10000,
-
-    ssl: process.env.DB_SSL === 'true'
-        ? { minVersion: 'TLSv1.2' }
-        : undefined
+db.on('error', (erro) => {
+    console.error('Erro PostgreSQL:', erro);
 });
 
 module.exports = db;

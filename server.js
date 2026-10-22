@@ -8,9 +8,9 @@ const db = require('./db');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// =====================================
+// ==========================================
 // CONFIGURAÇÕES
-// =====================================
+// ==========================================
 
 app.use(express.json());
 
@@ -24,16 +24,27 @@ app.use(cors({
     origin: origensPermitidas
 }));
 
-// =====================================
+// ==========================================
 // FUNÇÕES AUXILIARES
-// =====================================
+// ==========================================
+
+class ErroHTTP extends Error {
+    constructor(status, mensagem) {
+        super(mensagem);
+        this.status = status;
+    }
+}
 
 function idValido(id) {
-    return /^[1-9]\d*$/.test(String(id));
+    return /^[1-9]\d*$/.test(String(id)) &&
+        Number.isSafeInteger(Number(id)) &&
+        Number(id) <= 2147483647;
 }
 
 function quantidadeValida(quantidade) {
-    return Number.isSafeInteger(quantidade) && quantidade > 0;
+    return Number.isSafeInteger(quantidade) &&
+        quantidade > 0 &&
+        quantidade <= 2147483647;
 }
 
 function tipoValido(tipo) {
@@ -41,37 +52,13 @@ function tipoValido(tipo) {
 }
 
 function calcularEfeito(tipo, quantidade) {
-    return tipo === 'entrada' ? quantidade : -quantidade;
-}
-
-function tratarErro(res, error) {
-    console.error('Erro na API:', error);
-
-    if (
-        error.code === 'ER_ROW_IS_REFERENCED_2' ||
-        error.code === 'ER_ROW_IS_REFERENCED'
-    ) {
-        return res.status(409).json({
-            erro: 'Registro possui dados vinculados'
-        });
-    }
-
-    if (
-        error.code === 'ER_NO_REFERENCED_ROW_2' ||
-        error.code === 'ER_NO_REFERENCED_ROW'
-    ) {
-        return res.status(400).json({
-            erro: 'Produto relacionado não existe'
-        });
-    }
-
-    res.status(500).json({
-        erro: 'Erro interno no servidor'
-    });
+    return tipo === 'entrada'
+        ? quantidade
+        : -quantidade;
 }
 
 function validarProduto(dados, cadastro = false) {
-    const { nome, categoria, valor, quantidade } = dados;
+    const { nome, categoria, quantidade, valor } = dados;
 
     if (
         typeof nome !== 'string' ||
@@ -83,7 +70,8 @@ function validarProduto(dados, cadastro = false) {
         typeof valor !== 'number' ||
         !Number.isFinite(valor) ||
         valor < 0 ||
-        valor > 99999999.99
+        valor > 99999999.99 ||
+        Math.abs(valor * 100 - Math.round(valor * 100)) >= 0.000001
     ) {
         return false;
     }
@@ -97,228 +85,288 @@ function validarProduto(dados, cadastro = false) {
     return true;
 }
 
-// =====================================
+function validarEstoque(quantidade) {
+    if (
+        !Number.isSafeInteger(quantidade) ||
+        quantidade < 0 ||
+        quantidade > 2147483647
+    ) {
+        throw new ErroHTTP(
+            400,
+            'Movimentação resultaria em estoque inválido'
+        );
+    }
+}
+
+function tratarErro(res, erro) {
+    if (erro instanceof ErroHTTP) {
+        return res.status(erro.status).json({
+            erro: erro.message
+        });
+    }
+
+    console.error('Erro na Hertz API:', erro);
+
+    if (erro.code === '23503') {
+        return res.status(409).json({
+            erro: 'Registro possui dados vinculados'
+        });
+    }
+
+    if (erro.code === '23505') {
+        return res.status(409).json({
+            erro: 'Registro duplicado'
+        });
+    }
+
+    if (
+        erro.code === '23514' ||
+        erro.code === '23502' ||
+        erro.code === '22P02'
+    ) {
+        return res.status(400).json({
+            erro: 'Dados inválidos para o banco de dados'
+        });
+    }
+
+    return res.status(500).json({
+        erro: 'Erro interno no servidor'
+    });
+}
+
+// ==========================================
+// TRANSAÇÕES POSTGRESQL
+// ==========================================
+
+async function executarTransacao(operacao) {
+    const cliente = await db.connect();
+
+    try {
+        await cliente.query('BEGIN');
+
+        const resultado = await operacao(cliente);
+
+        await cliente.query('COMMIT');
+
+        return resultado;
+
+    } catch (erro) {
+        try {
+            await cliente.query('ROLLBACK');
+        } catch (erroRollback) {
+            console.error('Erro ao reverter transação:', erroRollback);
+        }
+
+        throw erro;
+
+    } finally {
+        cliente.release();
+    }
+}
+
+// Wrapper para rotas assíncronas
+function executar(funcao) {
+    return async (req, res, next) => {
+        try {
+            await funcao(req, res);
+        } catch (erro) {
+            next(erro);
+        }
+    };
+}
+
+// ==========================================
 // STATUS DA API
-// =====================================
+// ==========================================
 
 app.get('/', (req, res) => {
-    res.json({
+    res.status(200).json({
         sistema: 'Hertz Music & Audio Store',
         api: 'Gerenciamento de estoque',
-        status: 'online'
+        status: 'online',
+        banco: 'PostgreSQL'
     });
 });
 
+// Testar servidor
 app.get('/health', (req, res) => {
-    res.json({
+    res.status(200).json({
         status: 'online',
         sistema: 'Hertz API'
     });
 });
 
-// =====================================
+// Testar conexão com Neon
+app.get('/health/db', executar(async (req, res) => {
+    await db.query('SELECT 1');
+
+    res.status(200).json({
+        status: 'conectado',
+        banco: 'PostgreSQL'
+    });
+}));
+
+// ==========================================
 // CRUD DE PRODUTOS
-// =====================================
+// ==========================================
 
-// GET - Listar todos os produtos
-app.get('/produtos', async (req, res) => {
-    try {
-        const [produtos] = await db.query(
-            'SELECT * FROM produtos ORDER BY nome ASC'
-        );
+// GET - Listar todos
+app.get('/produtos', executar(async (req, res) => {
+    const resultado = await db.query(
+        'SELECT * FROM produtos ORDER BY nome ASC'
+    );
 
-        res.status(200).json(produtos);
-
-    } catch (error) {
-        tratarErro(res, error);
-    }
-});
+    res.status(200).json(resultado.rows);
+}));
 
 // GET - Buscar produto por ID
-app.get('/produtos/:id', async (req, res) => {
+app.get('/produtos/:id', executar(async (req, res) => {
     const { id } = req.params;
 
     if (!idValido(id)) {
-        return res.status(400).json({
-            erro: 'ID inválido'
-        });
+        throw new ErroHTTP(400, 'ID inválido');
     }
 
-    try {
-        const [produtos] = await db.query(
-            'SELECT * FROM produtos WHERE id_produto = ?',
-            [id]
-        );
+    const resultado = await db.query(
+        'SELECT * FROM produtos WHERE id_produto = $1',
+        [id]
+    );
 
-        if (!produtos.length) {
-            return res.status(404).json({
-                erro: 'Produto não encontrado'
-            });
-        }
-
-        res.status(200).json(produtos[0]);
-
-    } catch (error) {
-        tratarErro(res, error);
+    if (resultado.rows.length === 0) {
+        throw new ErroHTTP(404, 'Produto não encontrado');
     }
-});
+
+    res.status(200).json(resultado.rows[0]);
+}));
 
 // POST - Cadastrar produto
-app.post('/produtos', async (req, res) => {
+app.post('/produtos', executar(async (req, res) => {
     const dados = req.body || {};
 
     if (!validarProduto(dados, true)) {
-        return res.status(400).json({
-            erro: 'Dados do produto inválidos'
-        });
+        throw new ErroHTTP(400, 'Dados do produto inválidos');
     }
 
     const { nome, categoria, quantidade, valor } = dados;
 
-    try {
-        const [resultado] = await db.query(
-            `INSERT INTO produtos
-             (nome, categoria, quantidade, valor)
-             VALUES (?, ?, ?, ?)`,
-            [nome.trim(), categoria.trim(), quantidade, valor]
-        );
+    const resultado = await db.query(
+        `INSERT INTO produtos
+         (nome, categoria, quantidade, valor)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id_produto`,
+        [
+            nome.trim(),
+            categoria.trim(),
+            quantidade,
+            valor
+        ]
+    );
 
-        res.status(201).json({
-            mensagem: 'Produto cadastrado com sucesso',
-            id_produto: resultado.insertId
-        });
-
-    } catch (error) {
-        tratarErro(res, error);
-    }
-});
+    res.status(201).json({
+        mensagem: 'Produto cadastrado com sucesso',
+        id_produto: resultado.rows[0].id_produto
+    });
+}));
 
 // PUT - Atualizar produto
-app.put('/produtos/:id', async (req, res) => {
+app.put('/produtos/:id', executar(async (req, res) => {
     const { id } = req.params;
     const dados = req.body || {};
 
     if (!idValido(id)) {
-        return res.status(400).json({
-            erro: 'ID inválido'
-        });
+        throw new ErroHTTP(400, 'ID inválido');
     }
 
     if (!validarProduto(dados)) {
-        return res.status(400).json({
-            erro: 'Dados do produto inválidos'
-        });
+        throw new ErroHTTP(400, 'Dados do produto inválidos');
     }
 
     const { nome, categoria, valor } = dados;
 
-    try {
-        const [resultado] = await db.query(
-            `UPDATE produtos
-             SET nome = ?, categoria = ?, valor = ?
-             WHERE id_produto = ?`,
-            [nome.trim(), categoria.trim(), valor, id]
-        );
+    const resultado = await db.query(
+        `UPDATE produtos
+         SET nome = $1,
+             categoria = $2,
+             valor = $3
+         WHERE id_produto = $4`,
+        [
+            nome.trim(),
+            categoria.trim(),
+            valor,
+            id
+        ]
+    );
 
-        if (!resultado.affectedRows) {
-            return res.status(404).json({
-                erro: 'Produto não encontrado'
-            });
-        }
-
-        res.status(200).json({
-            mensagem: 'Produto atualizado com sucesso'
-        });
-
-    } catch (error) {
-        tratarErro(res, error);
+    if (resultado.rowCount === 0) {
+        throw new ErroHTTP(404, 'Produto não encontrado');
     }
-});
+
+    res.status(200).json({
+        mensagem: 'Produto atualizado com sucesso'
+    });
+}));
 
 // DELETE - Excluir produto
-app.delete('/produtos/:id', async (req, res) => {
+app.delete('/produtos/:id', executar(async (req, res) => {
     const { id } = req.params;
 
     if (!idValido(id)) {
-        return res.status(400).json({
-            erro: 'ID inválido'
-        });
+        throw new ErroHTTP(400, 'ID inválido');
     }
 
-    try {
-        const [resultado] = await db.query(
-            'DELETE FROM produtos WHERE id_produto = ?',
-            [id]
-        );
+    const resultado = await db.query(
+        'DELETE FROM produtos WHERE id_produto = $1',
+        [id]
+    );
 
-        if (!resultado.affectedRows) {
-            return res.status(404).json({
-                erro: 'Produto não encontrado'
-            });
-        }
-
-        res.status(200).json({
-            mensagem: 'Produto excluído com sucesso'
-        });
-
-    } catch (error) {
-        tratarErro(res, error);
+    if (resultado.rowCount === 0) {
+        throw new ErroHTTP(404, 'Produto não encontrado');
     }
-});
 
-// =====================================
+    res.status(200).json({
+        mensagem: 'Produto excluído com sucesso'
+    });
+}));
+
+// ==========================================
 // CRUD DE MOVIMENTAÇÕES
-// =====================================
+// ==========================================
 
 // GET - Listar movimentações
-app.get('/movimentacoes', async (req, res) => {
-    try {
-        const [movimentacoes] = await db.query(
-            `SELECT *
-             FROM movimentacoes
-             ORDER BY data DESC, id_movimentacao DESC`
-        );
+app.get('/movimentacoes', executar(async (req, res) => {
+    const resultado = await db.query(
+        `SELECT *
+         FROM movimentacoes
+         ORDER BY data DESC, id_movimentacao DESC`
+    );
 
-        res.status(200).json(movimentacoes);
-
-    } catch (error) {
-        tratarErro(res, error);
-    }
-});
+    res.status(200).json(resultado.rows);
+}));
 
 // GET - Buscar movimentação por ID
-app.get('/movimentacoes/:id', async (req, res) => {
+app.get('/movimentacoes/:id', executar(async (req, res) => {
     const { id } = req.params;
 
     if (!idValido(id)) {
-        return res.status(400).json({
-            erro: 'ID inválido'
-        });
+        throw new ErroHTTP(400, 'ID inválido');
     }
 
-    try {
-        const [movimentacoes] = await db.query(
-            `SELECT *
-             FROM movimentacoes
-             WHERE id_movimentacao = ?`,
-            [id]
-        );
+    const resultado = await db.query(
+        `SELECT *
+         FROM movimentacoes
+         WHERE id_movimentacao = $1`,
+        [id]
+    );
 
-        if (!movimentacoes.length) {
-            return res.status(404).json({
-                erro: 'Movimentação não encontrada'
-            });
-        }
-
-        res.status(200).json(movimentacoes[0]);
-
-    } catch (error) {
-        tratarErro(res, error);
+    if (resultado.rows.length === 0) {
+        throw new ErroHTTP(404, 'Movimentação não encontrada');
     }
-});
 
-// POST - Registrar movimentação
-app.post('/movimentacoes', async (req, res) => {
+    res.status(200).json(resultado.rows[0]);
+}));
+
+// POST - Registrar entrada ou saída
+app.post('/movimentacoes', executar(async (req, res) => {
     const {
         produtos_id_produto,
         tipo,
@@ -330,89 +378,64 @@ app.post('/movimentacoes', async (req, res) => {
         !tipoValido(tipo) ||
         !quantidadeValida(qtd_movimentada)
     ) {
-        return res.status(400).json({
-            erro: 'Dados da movimentação inválidos'
-        });
+        throw new ErroHTTP(
+            400,
+            'Dados da movimentação inválidos'
+        );
     }
 
-    let conexao;
-
-    try {
-        conexao = await db.getConnection();
-        await conexao.beginTransaction();
-
-        const [produtos] = await conexao.query(
+    const resposta = await executarTransacao(async cliente => {
+        const consulta = await cliente.query(
             `SELECT quantidade
              FROM produtos
-             WHERE id_produto = ?
+             WHERE id_produto = $1
              FOR UPDATE`,
             [produtos_id_produto]
         );
 
-        if (!produtos.length) {
-            await conexao.rollback();
-
-            return res.status(404).json({
-                erro: 'Produto não encontrado'
-            });
+        if (consulta.rows.length === 0) {
+            throw new ErroHTTP(404, 'Produto não encontrado');
         }
 
-        const estoqueAtual = Number(produtos[0].quantidade);
+        const estoqueAtual = consulta.rows[0].quantidade;
 
         const novoEstoque = estoqueAtual +
             calcularEfeito(tipo, qtd_movimentada);
 
-        if (novoEstoque < 0) {
-            await conexao.rollback();
+        validarEstoque(novoEstoque);
 
-            return res.status(400).json({
-                erro: 'Estoque insuficiente'
-            });
-        }
-
-        if (novoEstoque > 2147483647) {
-            await conexao.rollback();
-
-            return res.status(400).json({
-                erro: 'Quantidade acima do limite permitido'
-            });
-        }
-
-        await conexao.query(
+        await cliente.query(
             `UPDATE produtos
-             SET quantidade = ?
-             WHERE id_produto = ?`,
+             SET quantidade = $1
+             WHERE id_produto = $2`,
             [novoEstoque, produtos_id_produto]
         );
 
-        const [resultado] = await conexao.query(
+        const movimento = await cliente.query(
             `INSERT INTO movimentacoes
              (data, tipo, qtd_movimentada, produtos_id_produto)
-             VALUES (NOW(), ?, ?, ?)`,
-            [tipo, qtd_movimentada, produtos_id_produto]
+             VALUES (CURRENT_TIMESTAMP, $1, $2, $3)
+             RETURNING id_movimentacao`,
+            [
+                tipo,
+                qtd_movimentada,
+                produtos_id_produto
+            ]
         );
 
-        await conexao.commit();
-
-        res.status(201).json({
+        return {
             mensagem: 'Movimentação registrada com sucesso',
-            id_movimentacao: resultado.insertId,
+            id_movimentacao: movimento.rows[0].id_movimentacao,
             estoque_atual: novoEstoque
-        });
+        };
+    });
 
-    } catch (error) {
-        if (conexao) await conexao.rollback();
-        tratarErro(res, error);
+    res.status(201).json(resposta);
+}));
 
-    } finally {
-        if (conexao) conexao.release();
-    }
-});
-
-// PUT - Editar movimentação
-app.put('/movimentacoes/:id', async (req, res) => {
+// PUT - Atualizar movimentação
+app.put('/movimentacoes/:id', executar(async (req, res) => {
     const { id } = req.params;
-
     const { tipo, qtd_movimentada } = req.body || {};
 
     if (
@@ -420,235 +443,204 @@ app.put('/movimentacoes/:id', async (req, res) => {
         !tipoValido(tipo) ||
         !quantidadeValida(qtd_movimentada)
     ) {
-        return res.status(400).json({
-            erro: 'Dados da movimentação inválidos'
-        });
+        throw new ErroHTTP(
+            400,
+            'Dados da movimentação inválidos'
+        );
     }
 
-    let conexao;
-
-    try {
-        conexao = await db.getConnection();
-        await conexao.beginTransaction();
-
-        const [movimentacoes] = await conexao.query(
+    const resposta = await executarTransacao(async cliente => {
+        const consulta = await cliente.query(
             `SELECT *
              FROM movimentacoes
-             WHERE id_movimentacao = ?
+             WHERE id_movimentacao = $1
              FOR UPDATE`,
             [id]
         );
 
-        if (!movimentacoes.length) {
-            await conexao.rollback();
-
-            return res.status(404).json({
-                erro: 'Movimentação não encontrada'
-            });
+        if (consulta.rows.length === 0) {
+            throw new ErroHTTP(
+                404,
+                'Movimentação não encontrada'
+            );
         }
 
-        const anterior = movimentacoes[0];
+        const anterior = consulta.rows[0];
 
-        const [produtos] = await conexao.query(
+        const produto = await cliente.query(
             `SELECT quantidade
              FROM produtos
-             WHERE id_produto = ?
+             WHERE id_produto = $1
              FOR UPDATE`,
             [anterior.produtos_id_produto]
         );
 
-        if (!produtos.length) {
-            await conexao.rollback();
-
-            return res.status(404).json({
-                erro: 'Produto vinculado não encontrado'
-            });
+        if (produto.rows.length === 0) {
+            throw new ErroHTTP(
+                404,
+                'Produto vinculado não encontrado'
+            );
         }
 
+        // Reverte a movimentação anterior
         const efeitoAnterior = calcularEfeito(
             anterior.tipo,
-            Number(anterior.qtd_movimentada)
+            anterior.qtd_movimentada
         );
 
+        // Aplica a nova movimentação
         const efeitoNovo = calcularEfeito(
             tipo,
             qtd_movimentada
         );
 
         const novoEstoque =
-            Number(produtos[0].quantidade) -
+            produto.rows[0].quantidade -
             efeitoAnterior +
             efeitoNovo;
 
-        if (novoEstoque < 0 || novoEstoque > 2147483647) {
-            await conexao.rollback();
+        validarEstoque(novoEstoque);
 
-            return res.status(400).json({
-                erro: 'Alteração resultaria em estoque inválido'
-            });
-        }
-
-        await conexao.query(
+        await cliente.query(
             `UPDATE produtos
-             SET quantidade = ?
-             WHERE id_produto = ?`,
+             SET quantidade = $1
+             WHERE id_produto = $2`,
             [novoEstoque, anterior.produtos_id_produto]
         );
 
-        await conexao.query(
+        await cliente.query(
             `UPDATE movimentacoes
-             SET tipo = ?, qtd_movimentada = ?
-             WHERE id_movimentacao = ?`,
+             SET tipo = $1,
+                 qtd_movimentada = $2
+             WHERE id_movimentacao = $3`,
             [tipo, qtd_movimentada, id]
         );
 
-        await conexao.commit();
-
-        res.status(200).json({
+        return {
             mensagem: 'Movimentação atualizada com sucesso',
             estoque_atual: novoEstoque
-        });
+        };
+    });
 
-    } catch (error) {
-        if (conexao) await conexao.rollback();
-        tratarErro(res, error);
-
-    } finally {
-        if (conexao) conexao.release();
-    }
-});
+    res.status(200).json(resposta);
+}));
 
 // DELETE - Excluir movimentação
-app.delete('/movimentacoes/:id', async (req, res) => {
+app.delete('/movimentacoes/:id', executar(async (req, res) => {
     const { id } = req.params;
 
     if (!idValido(id)) {
-        return res.status(400).json({
-            erro: 'ID inválido'
-        });
+        throw new ErroHTTP(400, 'ID inválido');
     }
 
-    let conexao;
-
-    try {
-        conexao = await db.getConnection();
-        await conexao.beginTransaction();
-
-        const [movimentacoes] = await conexao.query(
+    const resposta = await executarTransacao(async cliente => {
+        const consulta = await cliente.query(
             `SELECT *
              FROM movimentacoes
-             WHERE id_movimentacao = ?
+             WHERE id_movimentacao = $1
              FOR UPDATE`,
             [id]
         );
 
-        if (!movimentacoes.length) {
-            await conexao.rollback();
-
-            return res.status(404).json({
-                erro: 'Movimentação não encontrada'
-            });
+        if (consulta.rows.length === 0) {
+            throw new ErroHTTP(
+                404,
+                'Movimentação não encontrada'
+            );
         }
 
-        const movimentacao = movimentacoes[0];
+        const movimento = consulta.rows[0];
 
-        const [produtos] = await conexao.query(
+        const produto = await cliente.query(
             `SELECT quantidade
              FROM produtos
-             WHERE id_produto = ?
+             WHERE id_produto = $1
              FOR UPDATE`,
-            [movimentacao.produtos_id_produto]
+            [movimento.produtos_id_produto]
         );
 
-        if (!produtos.length) {
-            await conexao.rollback();
-
-            return res.status(404).json({
-                erro: 'Produto vinculado não encontrado'
-            });
+        if (produto.rows.length === 0) {
+            throw new ErroHTTP(
+                404,
+                'Produto vinculado não encontrado'
+            );
         }
 
+        // Desfaz o efeito no estoque
         const efeitoAnterior = calcularEfeito(
-            movimentacao.tipo,
-            Number(movimentacao.qtd_movimentada)
+            movimento.tipo,
+            movimento.qtd_movimentada
         );
 
         const novoEstoque =
-            Number(produtos[0].quantidade) - efeitoAnterior;
+            produto.rows[0].quantidade -
+            efeitoAnterior;
 
-        if (novoEstoque < 0 || novoEstoque > 2147483647) {
-            await conexao.rollback();
+        validarEstoque(novoEstoque);
 
-            return res.status(400).json({
-                erro: 'Não é possível reverter esta movimentação'
-            });
-        }
-
-        await conexao.query(
+        await cliente.query(
             `UPDATE produtos
-             SET quantidade = ?
-             WHERE id_produto = ?`,
-            [novoEstoque, movimentacao.produtos_id_produto]
+             SET quantidade = $1
+             WHERE id_produto = $2`,
+            [novoEstoque, movimento.produtos_id_produto]
         );
 
-        await conexao.query(
+        await cliente.query(
             `DELETE FROM movimentacoes
-             WHERE id_movimentacao = ?`,
+             WHERE id_movimentacao = $1`,
             [id]
         );
 
-        await conexao.commit();
-
-        res.status(200).json({
+        return {
             mensagem: 'Movimentação excluída com sucesso',
             estoque_atual: novoEstoque
+        };
+    });
+
+    res.status(200).json(resposta);
+}));
+
+// ==========================================
+// TRATAMENTO DE ERROS
+// ==========================================
+
+// Erros de JSON
+app.use((erro, req, res, next) => {
+    if (
+        erro instanceof SyntaxError &&
+        erro.status === 400 &&
+        'body' in erro
+    ) {
+        return res.status(400).json({
+            erro: 'JSON inválido'
         });
-
-    } catch (error) {
-        if (conexao) await conexao.rollback();
-        tratarErro(res, error);
-
-    } finally {
-        if (conexao) conexao.release();
     }
+
+    next(erro);
 });
 
+// Rota não encontrada
+app.use((req, res) => {
+    res.status(404).json({
+        erro: 'Rota não encontrada'
+    });
+});
 
- // =====================================
- // TRATAMENTO DE ERROS
- // =====================================
+// Erros internos
+app.use((erro, req, res, next) => {
+    tratarErro(res, erro);
+});
 
- // JSON malformado
- app.use((error, req, res, next) => {
-     if (error instanceof SyntaxError && error.status === 400) {
-         return res.status(400).json({
-             erro: 'JSON inválido'
-         });
-     }
+// ==========================================
+// INICIALIZAÇÃO
+// ==========================================
 
-     next(error);
- });
+// Execução local
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Hertz API rodando na porta ${PORT}`);
+    });
+}
 
- // Rota não encontrada
- app.use((req, res) => {
-     res.status(404).json({
-         erro: 'Rota não encontrada'
-     });
- });
-
- // Erros inesperados
- app.use((error, req, res, next) => {
-     tratarErro(res, error);
- });
-
- // =====================================
- // INICIALIZAÇÃO
- // =====================================
-
- if (require.main === module) {
-     app.listen(PORT, () => {
-         console.log(`Hertz API rodando na porta ${PORT}`);
-     });
- }
-
- module.exports = app;
+// Exportação para a Vercel
+module.exports = app;
